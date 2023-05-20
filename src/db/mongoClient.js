@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 import Config from "../config/config.js";
-
 const mongoURI = Config.mongoDB.URI;
 
 const connectDB = async () => {

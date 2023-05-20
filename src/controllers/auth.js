@@ -5,7 +5,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import Config from "../config/config.js";
 
-export const register = async (req, res) => {
+export const signUp = async (req, res) => {
     const { name, email, password } = req.body;
 
     try {
@@ -38,7 +38,7 @@ export const register = async (req, res) => {
     }
 };
 
-export const login = async (req, res) => {
+export const signIn = async (req, res) => {
     const { email, password } = req.body;
 
     try {
