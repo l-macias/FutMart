@@ -73,23 +73,28 @@ export const forgotPassword = async (req, res) => {
         const token = jwt.sign({ _id: user._id }, Config.mongoDB.secret, {
             expiresIn: "30m",
         });
+
+        const resetLink = `${Config.global.port}/auth/password/reset?token=${token}`;
+
         const msg = {
             from: Config.nodemailer.email,
             to: email,
             subject: `Restablecer su Contraseña - ${Config.global.port}`,
             html: `
                 <p>Use el siguiente link para restablecer su contraseña:</p>
-                <p>${Config.global.port}/auth/password/reset/${token}</p>
-                
+                <p>${resetLink}</p>
+
                 <hr/>
                 <p>Este correo puede contener información importante y privada</p>
                 <p>https://nombredemipagina.com</p>
             `,
         };
+
         await user.updateOne({ resetPasswordLink: token });
         await transporter.sendMail(msg);
+
         return res.json({
-            message: `El Correo ha sido enviado a ${email} \n Siga las instrucciones para restablecer su contraseña. El link expira en 30 minutos`,
+            message: `El Correo ha sido enviado a ${email}. Siga las instrucciones para restablecer su contraseña. El link expira en 30 minutos`,
             success: true,
         });
     } catch (error) {
@@ -97,45 +102,49 @@ export const forgotPassword = async (req, res) => {
         return res.status(500).json({ error: "Algo salió mal" });
     }
 };
+
 export const resetPassword = (req, res) => {
     try {
-        const { resetPasswordLink, newPassword } = req.body;
-        if (!resetPasswordLink) {
+        const { token } = req.query;
+        const { newPassword } = req.body;
+
+        if (!token) {
             return res.status(400).json({
                 error: "El link de restablecimiento de contraseña es requerido",
             });
         }
-        jwt.verify(
-            resetPasswordLink,
-            Config.mongoDB.secret,
-            function (err, decoded) {
-                if (err) {
-                    return res.status(401).json({
-                        error: "El link ha expirado o es inválido, intente de nuevo",
-                    });
-                }
-                User.findOne({ resetPasswordLink }, (err, user) => {
-                    if (err || !user) {
-                        return res
-                            .status(401)
-                            .json({ error: "Algo ha salido mal" });
-                    }
-                    user.password = newPassword;
-                    user.resetPasswordLink = "";
-                    user.save((err, result) => {
-                        if (err) {
-                            return res.status(400).json({
-                                error: "No se pudo actualizar la contraseña",
-                            });
-                        }
-                        res.json({
-                            message:
-                                "¡Genial! Ahora puedes iniciar sesión con tu nueva contraseña",
-                        });
-                    });
+
+        jwt.verify(token, Config.mongoDB.secret, function (err, decoded) {
+            if (err) {
+                return res.status(401).json({
+                    error: "El link ha expirado o es inválido, intente de nuevo",
                 });
             }
-        );
+
+            User.findOne({ resetPasswordLink: token }, (err, user) => {
+                if (err || !user) {
+                    return res
+                        .status(401)
+                        .json({ error: "Algo ha salido mal" });
+                }
+
+                user.password = newPassword;
+                user.resetPasswordLink = "";
+
+                user.save((err, result) => {
+                    if (err) {
+                        return res.status(400).json({
+                            error: "No se pudo actualizar la contraseña",
+                        });
+                    }
+
+                    res.json({
+                        message:
+                            "¡Genial! Ahora puedes iniciar sesión con tu nueva contraseña",
+                    });
+                });
+            });
+        });
     } catch (error) {
         console.log(error);
         res.status(500).json({ error: "Algo salió mal" });
