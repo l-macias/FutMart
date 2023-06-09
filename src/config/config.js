@@ -11,6 +11,10 @@ const Config = {
     global: {
         port: process.env.PORT || 8080,
     },
+    nodemailer: {
+        email: process.env.NODEMAILER_MAIL,
+        password: process.env.NODEMAILER_PASS,
+    },
 };
 
 export default Config;

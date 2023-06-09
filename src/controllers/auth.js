@@ -5,6 +5,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import _ from "lodash";
 import Config from "../config/config.js";
+import transporter from "../utils/nodemailer.js";
 
 export const signUp = async (req, res) => {
     const { name, email, password } = req.body;
@@ -59,99 +60,84 @@ export const signIn = async (req, res) => {
 };
 
 // forgot password
-
+//TODO ARMAR BIEN EL MAIL Y CREAR EL CLIENTE URL
 export const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
-        User.findOne({ email }, (err, user) => {
-            if (err || !user)
-                return res.status(401).json({
-                    error: "User with this email does not exist",
-                });
-
-            const token = jwt.sign({ _id: user._id }, Config.mongoDB.secret, {
-                expiresIn: "30m",
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(401).json({
+                error: "No existe usuario con ese email",
             });
-
-            const data = {
-                from: "",
-                to: email,
-                subject: "Password Reset Link",
-                html: `
-                    <h2>Please click on given link to reset your password</h2>
-                    <p>${Config.clientURL}/resetpassword/${token}</p>
-                `,
-            };
-            return user.updateOne({ resetLink: token }, (err, success) => {
-                if (err) {
-                    return res.status(400).json({
-                        error: "Reset password link error",
-                    });
-                } else {
-                    // TODO send email with nodemailer
-                    transporter.sendMail(data, (err, info) => {
-                        if (err) {
-                            return res.status(400).json({
-                                error: "Something went wrong",
-                            });
-                        } else {
-                            return res.status(200).json({
-                                message: `Email has been sent to ${email}. Follow the instruction to activate your account`,
-                            });
-                        }
-                    });
-                }
-            });
+        }
+        const token = jwt.sign({ _id: user._id }, Config.mongoDB.secret, {
+            expiresIn: "30m",
+        });
+        const msg = {
+            from: Config.nodemailer.email,
+            to: email,
+            subject: `Restablecer su Contraseña - ${Config.global.port}`,
+            html: `
+                <p>Use el siguiente link para restablecer su contraseña:</p>
+                <p>${Config.global.port}/auth/password/reset/${token}</p>
+                
+                <hr/>
+                <p>Este correo puede contener información importante y privada</p>
+                <p>https://nombredemipagina.com</p>
+            `,
+        };
+        await user.updateOne({ resetPasswordLink: token });
+        await transporter.sendMail(msg);
+        return res.json({
+            message: `El Correo ha sido enviado a ${email} \n Siga las instrucciones para restablecer su contraseña. El link expira en 30 minutos`,
+            success: true,
         });
     } catch (error) {
-        res.status(500).json({ message: "Something went wrong" }, error);
+        console.log(error);
+        return res.status(500).json({ error: "Algo salió mal" });
     }
 };
-
-// reset password
-
-export const resetPassword = async (req, res) => {
+export const resetPassword = (req, res) => {
     try {
-        const { resetLink, newPass } = req.body;
-        if (resetLink) {
-            jwt.verify(
-                resetLink,
-                Config.mongoDB.secret,
-                function (error, decoded) {
-                    if (error) {
-                        return res.status(401).json({
-                            error: "Incorrect token or it is expired",
-                        });
-                    }
-                    User.findOne({ resetLink }, (err, user) => {
-                        if (err || !user) {
-                            return res.status(400).json({
-                                error: "User with this token does not exist",
-                            });
-                        }
-                        const obj = {
-                            password: newPass,
-                            resetLink: "",
-                        };
-                        user = _.extend(user, obj);
-                        user.save((err, result) => {
-                            if (err) {
-                                return res.status(400).json({
-                                    error: "Reset password error",
-                                });
-                            } else {
-                                return res.status(200).json({
-                                    message: "Your password has been changed",
-                                });
-                            }
-                        });
+        const { resetPasswordLink, newPassword } = req.body;
+        if (!resetPasswordLink) {
+            return res.status(400).json({
+                error: "El link de restablecimiento de contraseña es requerido",
+            });
+        }
+        jwt.verify(
+            resetPasswordLink,
+            Config.mongoDB.secret,
+            function (err, decoded) {
+                if (err) {
+                    return res.status(401).json({
+                        error: "El link ha expirado o es inválido, intente de nuevo",
                     });
                 }
-            );
-        } else {
-            return res.status(401).json({ error: "Authentication error" });
-        }
+                User.findOne({ resetPasswordLink }, (err, user) => {
+                    if (err || !user) {
+                        return res
+                            .status(401)
+                            .json({ error: "Algo ha salido mal" });
+                    }
+                    user.password = newPassword;
+                    user.resetPasswordLink = "";
+                    user.save((err, result) => {
+                        if (err) {
+                            return res.status(400).json({
+                                error: "No se pudo actualizar la contraseña",
+                            });
+                        }
+                        res.json({
+                            message:
+                                "¡Genial! Ahora puedes iniciar sesión con tu nueva contraseña",
+                        });
+                    });
+                });
+            }
+        );
     } catch (error) {
-        res.status(500).json({ message: "Something went wrong" }, error);
+        console.log(error);
+        res.status(500).json({ error: "Algo salió mal" });
     }
 };
